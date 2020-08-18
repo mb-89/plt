@@ -174,6 +174,8 @@ class DataBackgroundworker(QtCore.QObject):
 
             quantityName = col.find("Quantity").text
             signame = col.find("Signal").text.replace("\\","")
+            if signame in colnames: quantityName = "IGNORE"
+            else:                   colnames.append(signame)
             unit = col.find("Unit").text
             fullname = signame+"_"+quantityName#+"_"+unit
             if   quantityName is None:
@@ -190,7 +192,7 @@ class DataBackgroundworker(QtCore.QObject):
                 dtypeListlist.append((fullname,'i4'))
                 nrOfplaceHolders+=1
 
-            elif quantityName in "Text":
+            elif quantityName in ["Text", "IGNORE"]:
                 #dtypeListlist.append((fullname,'i4'))
                 dtypeListlist.append((f"$pad{nrOfplaceHolders}",'V8'))
                 nrOfplaceHolders+=1
@@ -322,10 +324,13 @@ class DataWidget(QtWidgets.QDockWidget):
                 nr = self.datasrcmdl.rowCount()
                 newItem = QtGui.QStandardItem(f"[{nr}] {path}")
                 for idx,df in enumerate(_ret):
-                    newChild = QtGui.QStandardItem(f"[{nr}.{idx}] {df.name}")
+                    newChild = QtGui.QStandardItem(f"[{nr}.{idx}] {df.name} ({len(df)} x {len(df.columns)})")
                     newChild.setData(nr, DATA.SRCIDX.value)
                     newChild.setData(idx, DATA.SRCSUBIDX.value)
-                    newItem.appendRow(newChild)
+                    #rowsAndCols = QtGui.QStandardItem(f"{}")
+                    #rowsAndCols.setFlags(QtCore.Qt.NoItemFlags)
+                    newRow = [newChild]
+                    newItem.appendRow(newRow)
                 self.datasrcmdl.appendRow(newItem)
                 self.displayselectedfiles()
     
