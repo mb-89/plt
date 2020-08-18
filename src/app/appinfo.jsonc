@@ -1,0 +1,9 @@
+{
+    "name": "plt",
+    "plugins":
+    {
+        "log": "src.plugins.log",
+        "plotter": "src.plugins.plot",
+        "data": "src.plugins.data"
+    }
+}
