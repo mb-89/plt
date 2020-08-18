@@ -2,6 +2,7 @@ from src.plugins.plugin import Plugin as _P
 from src.plugins.plugin import CMD,Helpers
 from PyQt5 import  QtWidgets, QtCore, QtGui
 from functools import partial
+from itertools import zip_longest
 
 import pyqtgraph.parametertree.parameterTypes as pTypes
 import pyqtgraph as pg
@@ -27,6 +28,18 @@ class Plugin(_P):
             'children': [
                 {'name': 'src dataframes', 'type': 'str', 'value': "",'readonly': True},
                 {'name': 'dst axes', 'type': 'group', 'children':[]}
+                ]
+        },
+        {
+            'name': 'labels', 
+            'type': 'group',
+            'children': [
+                {'name': 'title', 'type': 'str'},
+                {'name': 'X', 'type': 'str'},
+                {'name': 'Y', 'type': 'str'},
+                {'name': 'df name mask', 'type': 'str', "value": "{srcidx}.{dfidx}"},
+                {'name': 'series display names', 'type': 'str', "value": ""},
+
                 ]
         },
         {
@@ -82,13 +95,28 @@ class PlotWidget(QtWidgets.QDockWidget):
         L.setContentsMargins(0,0,0,0)
         L.setSpacing(0)
         self.plotData()
-    
+        self.topLevelChanged.connect(self.modifyWindowFlags)
+
+    def modifyWindowFlags(self, detached):
+        if not detached:return
+        self.setWindowFlags(
+            QtCore.Qt.CustomizeWindowHint|
+            QtCore.Qt.Window|
+            QtCore.Qt.WindowMinimizeButtonHint|
+            QtCore.Qt.WindowMaximizeButtonHint|
+            QtCore.Qt.WindowCloseButtonHint
+        )
+        self.show()
+
     def buildGraphicsLayout(self):
         return pg.GraphicsLayoutWidget()
 
     def plotData(self):
         if self.opts["global options"]["white bg"]: self.pw.setBackground('w')
         if self.opts["global options"]["antialias"]: self.pw.setAntialiasing(True)
+        
+        title = self.opts["labels"]["title"]
+        if title:self.setWindowTitle(title)
 
         self.plots = []
         dsts = dict( (k, [[y[0],int(y[1:])] for y in v.replace(" ","").split(";")] ) for k,v in self.opts["Data selection"]["dst axes"].items())
@@ -113,9 +141,25 @@ class PlotWidget(QtWidgets.QDockWidget):
                 if Y: dstList.append(X+Y)
             currIdx +=1
 
-        for row,xy in enumerate(dstList):
+        Xlabels = [""]*len(dstList)
+        for xlidx,xl in enumerate(self.opts["labels"]["X"].split(";")):
+            Xlabels[xlidx] = xl.strip()
+        for xlidx2 in range(xlidx+1, len(dstList)):
+            Xlabels[xlidx2] = Xlabels[xlidx]
+        Ylabels = [""]*len(dstList)
+        for ylidx,yl in enumerate(self.opts["labels"]["Y"].split(";")):
+            Ylabels[ylidx] = yl.strip()
+        for ylidx2 in range(ylidx+1, len(dstList)):
+            Ylabels[ylidx2] = Ylabels[ylidx]
+
+        dfnames = self.getdfnames(dfs, self.opts["labels"]["df name mask"])
+
+        for row,(xy,xl,yl) in enumerate(zip(dstList,Xlabels,Ylabels)):
+            linenames = self.getlinenames(xy,self.opts["labels"]["series display names"])
             p = self.pw.addPlot(row,0)
             p.addLegend()
+            p.setLabel("left",yl)
+            p.setLabel("bottom",xl)
             p.showGrid(x = True, y = True, alpha = 0.3)
             p.ctrl.fftCheck.setChecked(fft)
             if len(self.plots)>0: p.setXLink(self.plots[0])
@@ -131,7 +175,32 @@ class PlotWidget(QtWidgets.QDockWidget):
                 if syncIdx is not None: xvals -= xvals[syncIdx]
                 for yidx,y in enumerate(xy[1:]):
                     yvals = self.applyMath(df[y].values,y,row,syncIdx)
-                    p.plot(x=xvals,y=yvals, pen = (nrofYs*dfIdx+yidx,nrofplots))
+                    dfname = dfnames[dfIdx]
+                    linename = linenames[yidx]
+                    p.plot(x=xvals,y=yvals, pen = (nrofYs*dfIdx+yidx,nrofplots), name=f"{linename} [{dfname}]")
+
+    def getdfnames(self, dfs, namemask):
+        fields = [x[1:-1] for x in re.findall("{.*?}", namemask)]
+        names = []
+        for df in dfs:
+            valdict = {}
+            attribkeys = tuple(df.attribs.keys())
+            for f in fields:
+                val = df.get(f)
+                if val is None:
+                    fnds = tuple(k for k in attribkeys if re.search(f,k))
+                    if len(fnds) == 1: val = df.attribs[fnds[0]]
+                if val is None:
+                    val = "$"+f
+                valdict[f] = val
+            names.append(namemask.format(**valdict))
+        return names
+
+    def getlinenames(self,xy,namelist):
+        names = []
+        for orig,new in zip_longest(xy[1:],namelist.split(";")[:len(xy)-1]):
+            names.append(new if new else orig)
+        return names
 
     def applyMath(self, vals, name, yaxis, idxsync, isX = False):
         math = self.opts["Math operations"]
@@ -156,9 +225,6 @@ class PlotWidget(QtWidgets.QDockWidget):
                 vmax = abs(max(vals))
                 vmin = abs(min(vals))
                 vals /=max(vmax,vmin)
-
-            bla = 1
-
         return vals
 
     def closeEvent(self, e):

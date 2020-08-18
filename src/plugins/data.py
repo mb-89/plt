@@ -54,6 +54,7 @@ class DataBackgroundworker(QtCore.QObject):
         self.killed = False
         self.rootapp = parent.rootapp
         self.rootplugin = parent
+        self.nrofsrcs = 0
     def kill(self):
         self.killed = True
     def execCMD(self, cmd):
@@ -96,12 +97,16 @@ class DataBackgroundworker(QtCore.QObject):
         if cmd.OUT_result == None:
             cmd.OUT_retcode = -2
             cmd.OUT_retstr = "unknown file format"
+        else:
+            self.nrofsrcs+=1
 
     def postprocessDataFrames(self, dfs):
-        for df in dfs:
+        for idx,df in enumerate(dfs):
             try: df.attribs = {} #we need to work on this. dataframes do not support metadata natively
             except UserWarning:pass
             constcols = tuple(x for x in df.columns if df[x].nunique()==1)
+            df.attribs["dfidx"] = idx
+            df.attribs["srcidx"] = self.nrofsrcs
             for cc in constcols:
                 name = cc
                 val = df[name].iloc[0]
@@ -274,6 +279,7 @@ class DataWidget(QtWidgets.QDockWidget):
         selfdockollectplt = QtWidgets.QPushButton("dock plots")
         self.plt.clicked.connect(self.sendplotCMD)
         selfdockollectplt.clicked.connect(self.dockplots)
+        selfdockollectplt.setMaximumWidth(75)
         W2 = QtWidgets.QWidget()
         L2 = QtWidgets.QHBoxLayout()
         L2.addWidget(self.plt)
@@ -353,9 +359,9 @@ class DataWidget(QtWidgets.QDockWidget):
 
     def displaydataframedetails(self, dfs):
         self.attribmdl.clear()
-        self.seriesmdl.setHorizontalHeaderLabels(["series", "dst axes (x1,y1,...)"])
+        self.seriesmdl.setHorizontalHeaderLabels(["series", "dst axes (x1,y1,...)", "display name"])
         self.attribmdl.setHorizontalHeaderLabels(["attrib", "vals"])
-        self.seriesmdl.setColumnCount(2)
+        self.seriesmdl.setColumnCount(3)
         self.attribmdl.setColumnCount(2)
 
         if not dfs:
@@ -395,10 +401,12 @@ class DataWidget(QtWidgets.QDockWidget):
                 item = QtGui.QStandardItem(nc)
                 #item.setEditable(False)
                 pltitem = QtGui.QStandardItem("")
+                nameitem = QtGui.QStandardItem("")
 
                 item.setData(   item, DATA.ROW0.value)
                 pltitem.setData(item, DATA.ROW0.value)
-                sroot.appendRow([item,pltitem])
+                nameitem.setData(item, DATA.ROW0.value)
+                sroot.appendRow([item,pltitem,nameitem])
 
         self.seriesview.model().sort(0)
 
