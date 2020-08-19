@@ -5,6 +5,7 @@ import time
 from functools import partial
 from lxml import etree
 import os.path as op
+import os
 import numpy as np
 import pandas as pd
 import re
@@ -243,6 +244,12 @@ class DataWidget(QtWidgets.QDockWidget):
         L.addWidget(S)
         w.setLayout(L)
 
+        L3 = QtWidgets.QHBoxLayout()
+        L3.setContentsMargins(0,0,0,0)
+        L3.setSpacing(0)
+        W3 = QtWidgets.QWidget()
+        W3.setLayout(L3)
+        S.addWidget(W3)
         datasrcview = Datasrcview()
         datasrcview.fileDropped.connect(self.parsefile)
         datasrcmdl = QtGui.QStandardItemModel()
@@ -251,8 +258,34 @@ class DataWidget(QtWidgets.QDockWidget):
         datasrcview.selectionModel().selectionChanged.connect(self.displayselectedfiles)
         datasrcview.selectionModel().selectionChanged.connect(self.addselectedfiles2params)
         datasrcview.setHeaderHidden(True)
-        S.addWidget(datasrcview)
 
+        FSL = QtWidgets.QVBoxLayout()
+        FSL.setContentsMargins(0,0,0,0)
+        FSL.setSpacing(0)
+        fsview = QtWidgets.QTreeView()
+        fsmdl = QtWidgets.QFileSystemModel()
+        fsview.setModel(fsmdl)
+        fsview.setDragEnabled(True)
+        fsview.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+        browse = QtWidgets.QPushButton("Browse")
+        browse.clicked.connect(lambda: self.setViewDir(QtWidgets.QFileDialog.getExistingDirectory()))
+        refresh = QtWidgets.QPushButton("Refresh")
+        refresh.clicked.connect(self.refreshViewDir)
+        BL = QtWidgets.QHBoxLayout()
+        BL.setSpacing(0)
+        BL.setContentsMargins(0,0,0,0)
+        BL.addWidget(browse)
+        BL.addWidget(refresh)
+        FSL.addLayout(BL)
+        FSL.addWidget(fsview)
+        self.files = fsview
+        self.lastdir = os.getcwd()
+        self.refreshViewDir()
+        
+
+
+        L3.addWidget(datasrcview)
+        L3.addLayout(FSL)
         T = QtWidgets.QTabWidget()
 
         seriesview = QtWidgets.QTreeView()
@@ -301,6 +334,17 @@ class DataWidget(QtWidgets.QDockWidget):
         self.displaydataframedetails([])
 
         return w
+
+    def setViewDir(self,dir):
+        if not dir or not op.isdir(dir):return
+        self.lastdir = dir
+        dir = dir.replace("\\","/")
+        mdl = self.files.model()
+        mdl.setRootPath(dir)
+        self.files.setRootIndex(mdl.index(dir))
+    
+    def refreshViewDir(self):
+        self.setViewDir(self.lastdir)
 
     def dockplots(self):
         for plt in self.rootapp.plugins["plotter"].plots:
