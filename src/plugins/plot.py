@@ -4,9 +4,11 @@ from PyQt5 import  QtWidgets, QtCore, QtGui
 from functools import partial
 from itertools import zip_longest
 
+import os.path as op
 import pyqtgraph.parametertree.parameterTypes as pTypes
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter, ParameterTree, ParameterItem, registerParameterType
+import pyqtgraph.exporters
 import re
 log = None
 
@@ -90,12 +92,30 @@ class PlotWidget(QtWidgets.QDockWidget):
         self.rootplugin = parent
         self.rootapp = parent.rootapp
         self.pw = self.buildGraphicsLayout()
+        self.shortcut0 = QtWidgets.QShortcut(QtCore.Qt.CTRL+QtCore.Qt.Key_E, self, self.export)
+        self.shortcut1 = QtWidgets.QShortcut(QtCore.Qt.CTRL+QtCore.Qt.Key_S, self, self.save)
         self.setWidget(self.pw)
         L = self.layout()
         L.setContentsMargins(0,0,0,0)
         L.setSpacing(0)
         self.plotData()
         self.topLevelChanged.connect(self.modifyWindowFlags)
+
+    def export(self):
+        #we collect the options and the limits for all plots. We pass this to the latex exporter,
+        #which does the rest.
+        exportdata = {
+            "opts": self.opts,
+            "plts": self.plots
+        }
+        LaTexBuilder(exportdata,self.rootapp).export(QtWidgets.QFileDialog.getSaveFileName())
+
+    def save(self):
+        exporter = pg.exporters.ImageExporter(self.pw.scene())
+        exporter.export('tmp.png')
+        img = QtGui.QImage("tmp.png")
+        self.rootapp.clipboard().setImage(img,QtGui.QClipboard.Clipboard)
+        log.info(f"moved current figure to clipboard")
 
     def modifyWindowFlags(self, detached):
         if not detached:return
@@ -157,6 +177,7 @@ class PlotWidget(QtWidgets.QDockWidget):
         for row,(xy,xl,yl) in enumerate(zip(dstList,Xlabels,Ylabels)):
             linenames = self.getlinenames(xy,self.opts["labels"]["series display names"])
             p = self.pw.addPlot(row,0)
+            p._attribs = {}
             p.addLegend()
             p.setLabel("left",yl)
             p.setLabel("bottom",xl)
@@ -178,6 +199,9 @@ class PlotWidget(QtWidgets.QDockWidget):
                     dfname = dfnames[dfIdx]
                     linename = linenames[yidx]
                     p.plot(x=xvals,y=yvals, pen = (nrofYs*dfIdx+yidx,nrofplots), name=f"{linename} [{dfname}]")
+                    p._attribs["df"] = df
+                    p._attribs["X"]  = df[xy[0]]
+                    p._attribs["Ys"] = df[y]
 
     def getdfnames(self, dfs, namemask):
         fields = [x[1:-1] for x in re.findall("{.*?}", namemask)]
@@ -275,3 +299,34 @@ class ScalableGroup(pTypes.GroupParameter):
             {"name": "offset","type":"float","value":0.0},
 
         ],"removable":True})
+
+class LaTexBuilder():
+    def __init__(self, exportdata, rootapp):
+        self.exportdata = exportdata
+        self.opts = exportdata["opts"]
+        self.rootapp = rootapp
+    def export(self, dst):
+        if not dst[0]:return
+
+        srcs = tuple(tuple(int(y) for y in x.split(".")) for x in self.opts["Data selection"]["src dataframes"].split(";"))
+        dataList = self.rootapp.plugins["data"].srcList
+        dataDict = self.rootapp.plugins["data"].srcDict
+        dfs = tuple(dataDict[dataList[x[0]]][x[1]] for x in srcs)
+
+        lines = ["\\documentclass{standalone}\n\\usepackage{pgfplots}\n\\usepackage{filecontents}\n\\pgfplotsset{compat=1.9}"]
+        lines.append("\\begin{filecontents}{data.dat}")
+        #put raw data here
+        lines.append("\\end{filecontents}")
+
+        lines.append("\\begin{document}\n\\begin{tikzpicture}\n\\begin{axis}[%")
+        #put options here
+        lines.append("]")
+
+        #put plots here
+        lines.append(r"\addplot table[x index=0,y index=1,col sep=comma] {data.dat};")
+
+        lines.append("\\end{axis}\n\\end{tikzpicture}\n\\end{document}")
+
+        open(dst[0],"w").write("\n".join(lines))
+        log.info(f"exported current plot to {op.abspath(dst[0])}")
+

@@ -1,3 +1,5 @@
 .vscode/
 *_ui.py
 __pycache__
+*.tex
+*.png
