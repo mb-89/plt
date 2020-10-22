@@ -91,9 +91,12 @@ class DataBackgroundworker(QtCore.QObject):
             isVisionXML = rootxml.tag == "DataSet"
 
             if isVisionXML: cmd.OUT_result = self.parseVisionXML(filename, rootxml)
-            
-            if cmd.OUT_result:
-                self.postprocessDataFrames(cmd.OUT_result)
+        else:
+            #try to parse as csv
+            cmd.OUT_result = self.parseCSV(filename)
+
+        if cmd.OUT_result:
+            self.postprocessDataFrames(cmd.OUT_result)
 
         if cmd.OUT_result == None:
             cmd.OUT_retcode = -2
@@ -113,6 +116,18 @@ class DataBackgroundworker(QtCore.QObject):
                 val = df[name].iloc[0]
                 df.attribs[name] = val
                 del df[name]
+
+    def parseCSV(self, filename):
+        dataframes = []
+        log.info(f"started parsing {op.basename(filename)} (csv)")
+        try:
+            df = pd.read_csv(filename, sep = ";", index_col=False)
+            df.name = op.splitext(op.basename(filename))[0]
+            dataframes.append(df)
+        except:
+            return None
+        log.info(f"done parsing {op.basename(filename)}, extracted {len(dataframes)} dataframes")
+        return dataframes
 
     def parseVisionXML(self, filename, xml):
         dirname = op.dirname(filename)

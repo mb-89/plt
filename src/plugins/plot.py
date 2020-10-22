@@ -10,6 +10,8 @@ import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter, ParameterTree, ParameterItem, registerParameterType
 import pyqtgraph.exporters
 import re
+from math import ceil
+
 log = None
 
 class Plugin(_P):
@@ -313,20 +315,32 @@ class LaTexBuilder():
         dataDict = self.rootapp.plugins["data"].srcDict
         dfs = tuple(dataDict[dataList[x[0]]][x[1]] for x in srcs)
 
-        lines = ["\\documentclass{standalone}\n\\usepackage{pgfplots}\n\\usepackage{filecontents}\n\\pgfplotsset{compat=1.9}"]
-        lines.append("\\begin{filecontents}{data.dat}")
-        #put raw data here
-        lines.append("\\end{filecontents}")
-
-        lines.append("\\begin{document}\n\\begin{tikzpicture}\n\\begin{axis}[%")
-        #put options here
-        lines.append("]")
-
-        #put plots here
-        lines.append(r"\addplot table[x index=0,y index=1,col sep=comma] {data.dat};")
-
-        lines.append("\\end{axis}\n\\end{tikzpicture}\n\\end{document}")
-
-        open(dst[0],"w").write("\n".join(lines))
-        log.info(f"exported current plot to {op.abspath(dst[0])}")
-
+        for dfidx,df in enumerate(dfs):
+            if len(df)>1000:#bc latex cant do too much
+                log.info(f"resampled data bc too many points for LaTeX")
+                resamp = ceil(len(df)/1000)
+                resampleddf = df.iloc[0:5000:resamp]
+            else:
+                resampleddf = df
+            lines = ["%defining commands for all traces:"]
+            Time = resampleddf["Time"]
+            undefs = []
+            
+            for colidx,colname in enumerate(resampleddf.columns):
+                if colname == "Time":continue
+                if colname.startswith("Unnamed"):continue
+                #if flt and not re.findall(flt, colname):continue
+                colnameclean=f"col{colidx}"
+                undefs.append(colnameclean)
+                line = f"\\csdef{{{colnameclean}}}"+"{\\addplot+[thick] coordinates {"
+                col = resampleddf[colname]
+                for t,v in zip(Time, col.values):
+                    line+=f"({t},{v})"
+                line+="};}"
+                lines.append(f"%{colname}")
+                lines.append(line)
+            lines.append("\n%undefining the commands after the figure is done:")
+            for u in undefs:
+                lines.append(f"\\csundef{{{u}}}")
+            open(dst[0],"w").write("\n".join(lines))
+            log.info(f"exported current plot data to {op.abspath(dst[0])} (as pgf coordinates)")
